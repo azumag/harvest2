@@ -1,6 +1,7 @@
 const functions = require("firebase-functions");
 // const admin = require("firebase-admin");
-const ccxt = require('ccxt')
+const ccxt = require('ccxt');
+const { config } = require("firebase-functions");
 
 exports.onTick = functions
   .region('asia-northeast1')
@@ -34,13 +35,18 @@ const currencyPairs = [
   'QTUM/BTC',
   'BAT/BTC',
 ];
+let orderBooks = {}
 
+/// == prepare exchanges 
 const bitbank = new ccxt.bitbank();
 // bitbank.setSandboxMode(true);
-bitbank.apiKey = functions.config().bitbank.apikey;
-bitbank.secret = functions.config().bitbank.secret;
+bitbank.apiKey = functions.config().bitbank ? functions.config().bitbank.apikey : process.env.apikey;
+bitbank.secret = functions.config().bitbank ? functions.config().bitbank.secret : process.env.secret;
 
-let orderBooks = {}
+if (process.env.apikey) {
+  onTickExport();
+}
+
 async function getAskBid(symbol) {
   const orderBook = orderBooks[symbol] ? orderBooks[symbol] : await bitbank.fetchOrderBook(symbol);
   orderBooks[symbol] = orderBook;
@@ -146,7 +152,5 @@ async function trade(chancePair) {
   console.log(chancePair);
   functions.logger.info("fin: -- trade", {});
 }
-
-onTickExport();
 
 
