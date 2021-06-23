@@ -1,7 +1,6 @@
 const functions = require("firebase-functions");
 // const admin = require("firebase-admin");
 const ccxt = require('ccxt');
-const { config } = require("firebase-functions");
 
 exports.onTick = functions
   .region('asia-northeast1')
