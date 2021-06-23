@@ -60,10 +60,12 @@ async function onTickExport() {
   functions.logger.info("invoked", {});
   await innerArbitrage();
   // await pseudoInnerArbitrage();
+  console.log(getAskBid('BTC/JPY'));
   functions.logger.info("fin", {});
 }
 
-async function getArbitrageChancePairs() {
+async function innerArbitrage() {
+  functions.logger.info("invoked: innerArbitrage", {});
   const chancePairs = [];
     
   for(let i=0; i < currencyPairs.length; i++) {
@@ -134,27 +136,21 @@ async function getArbitrageChancePairs() {
         result: output.totalWithFee,
       });
       if (output.totalWithFee >= thresholdBenefit) 
-        chancePairs.push(output);
+        // chancePairs.push(output);
+        tradeArbitrage(output);
+        // todo: realtime trade
     };
   };
-  return chancePairs;
+  // return chancePairs;
+  // await Promise.all(chancePairs.map(e => tradeArbitrage(e)));
+  functions.logger.info("fin: innerArbitrage", {});
 }
-
-async function pseudoInnerArbitrage() {
-  const chancePairs = await getArbitrageChancePairs();
-
-}
-
-async function innerArbitrage() {
-  functions.logger.info("invoked: innerArbitrage", {});
   
-  const chancePairs = await getArbitrageChancePairs(); 
+  // const chancePairs = await getArbitrageChancePairs(); 
   // for(let i=0; i<chancePairs.length; i++) {
   //   await trade(chancePairs[i])
   // }
-  await Promise.all(chancePairs.map(e => tradeArbitrage(e)));
-  functions.logger.info("fin: innerArbitrage", {});
-}
+// }
 
 async function tradeArbitrage(chancePair) {
   functions.logger.info("invoked: -- trade", chancePair);
