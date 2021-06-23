@@ -8,9 +8,13 @@ exports.onTick = functions
   .timeZone('Asia/Tokyo')
   .onRun(async _ => await onTickExport())
 
+function floorDecimal(value, n) {
+  return Math.floor(value * Math.pow(10, n) ) / Math.pow(10, n);
+}
+
 const leastAmount = 0.0001;
-const tradingFee = 0.0012;
-const thresholdBenefit = 1;
+const tradingFeeRate = 0.0012;
+const thresholdBenefit = 0;
 const currencyPairs = [
   'BTC/JPY',
   'XRP/JPY',
@@ -24,7 +28,7 @@ const currencyPairs = [
   'XRP/BTC',
   'ETH/BTC',
   'LTC/BTC',
-  // 'BCC/BTC',
+  'BCH/BTC',
   'MONA/BTC',
   'XLM/BTC',
   'QTUM/BTC',
@@ -32,6 +36,9 @@ const currencyPairs = [
 ];
 
 const bitbank = new ccxt.bitbank();
+// bitbank.setSandboxMode(true);
+bitbank.apiKey = functions.config().bitbank.apikey;
+bitbank.secret = functions.config().bitbank.secret;
 
 let orderBooks = {}
 async function getAskBid(symbol) {
@@ -67,40 +74,79 @@ async function innerArbitrage() {
     }
 
     for(let j=0; j < midPairs.length; j++) {
-      const midSymbol = midPairs[i];
+      const midSymbol = midPairs[j];
       const midTargCurrency = midSymbol.match(/(.+)\//)[1];
       const goalSymbol = midTargCurrency + '/' + rootCurrency;
 
-      const rootAskBid = await getAskBid(symbol)
-      const midAskBid = await getAskBid(midSymbol)
-      const goalAskBid = await getAskBid(goalSymbol);
+      const askBids = await Promise.all([
+        getAskBid(symbol),
+        getAskBid(midSymbol),
+        getAskBid(goalSymbol)
+      ]);
+      const rootAskBid = askBids[0];
+      const midAskBid = askBids[1];
+      const goalAskBid = askBids[2];
 
-      const midResult = (1/midAskBid.bid);
-      const result = goalAskBid.ask * midResult;
-      const total = result - rootAskBid.bid;
-      const ActualTotal = total * leastAmount;
+      // fee = price * amount * feerate
+      const rootBuy = rootAskBid.bid * leastAmount;
+      const rootFee = rootBuy * tradingFeeRate;
+      const midFee = leastAmount * midAskBid.bid * tradingFeeRate;
+      const midBuy = ((leastAmount - midFee) / midAskBid.bid);
+      const goalSell = goalAskBid.ask * midBuy;
+      const goalFee = goalSell * tradingFeeRate;
+      const total = (goalSell - goalFee) - rootBuy;
+      const totalWithFee = total - rootFee;
 
       const output = {
-        currencies: [
-          rootCurrency, midTargCurrency, targCurrency
-        ],
-        askbids: [
-          rootAskBid.bid,
-          midAskBid.bid,
-          goalAskBid.ask
-        ],
-        midResult,
-        result,
+        root: {
+          symbol,
+          amount: leastAmount,
+          bid: rootAskBid.bid,
+          buy: rootBuy,
+          fee: rootFee
+        },
+        mid: {
+          symbol: midSymbol,
+          amount: midBuy,
+          bid: midAskBid.bid,
+          buy: leastAmount,
+          fee: midFee,
+        },
+        goal: {
+          symbol: goalSymbol,
+          amount: midBuy,
+          ask: goalAskBid.ask,
+          sell: goalSell,
+          fee: goalFee,
+        },
         total,
-        ActualTotal,
+        totalWithFee,
       };
-      if (output.ActualTotal >= thresholdBenefit) {
+      if (output.totalWithFee >= thresholdBenefit) 
         chancePairs.push(output);
-      }
     };
   };
   console.log(chancePairs);
+  // for(let i=0; i<chancePairs.length; i++) {
+  //   await trade(chancePairs[i])
+  // }
+  try {
+    await Promise.all(chancePairs.map(e => trade(e)));
+  } catch (e) {
+    functions.logger.info("error: innerArbitrage: call trade", {error: e});
+  }
+  functions.logger.info("fin: innerArbitrage", {});
+}
+
+async function trade(chancePair) {
+  functions.logger.info("invoked: -- trade", chancePair);
+  bitbank.createLimitBuyOrder(chancePair.root.symbol, chancePair.root.amount, chancePair.root.bid)
+  bitbank.createLimitBuyOrder(chancePair.mid.symbol, chancePair.mid.amount, chancePair.mid.bid)
+  bitbank.createLimitSellOrder(chancePair.goal.symbol, chancePair.goal.amount, chancePair.goal.ask)
+  console.log(chancePair);
+  functions.logger.info("fin: -- trade", {});
 }
 
 onTickExport();
+
 
