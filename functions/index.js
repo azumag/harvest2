@@ -129,6 +129,10 @@ async function getArbitrageChancePairs() {
         total,
         totalWithFee,
       };
+      console.log({
+        goalSym: output.goal.symbol,
+        result: output.totalWithFee,
+      });
       if (output.totalWithFee >= thresholdBenefit) 
         chancePairs.push(output);
     };
@@ -145,7 +149,6 @@ async function innerArbitrage() {
   functions.logger.info("invoked: innerArbitrage", {});
   
   const chancePairs = await getArbitrageChancePairs(); 
-  console.log(chancePairs);
   // for(let i=0; i<chancePairs.length; i++) {
   //   await trade(chancePairs[i])
   // }
