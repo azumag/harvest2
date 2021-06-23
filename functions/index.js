@@ -57,13 +57,12 @@ async function getAskBid(symbol) {
 
 async function onTickExport() {
   functions.logger.info("invoked", {});
-  await innerArbitrage()
+  await innerArbitrage();
+  // await pseudoInnerArbitrage();
   functions.logger.info("fin", {});
 }
 
-async function innerArbitrage() {
-  functions.logger.info("invoked: innerArbitrage", {});
-  
+async function getArbitrageChancePairs() {
   const chancePairs = [];
     
   for(let i=0; i < currencyPairs.length; i++) {
@@ -132,19 +131,27 @@ async function innerArbitrage() {
         chancePairs.push(output);
     };
   };
+  return chancePairs;
+}
+
+async function pseudoInnerArbitrage() {
+  const chancePairs = await getArbitrageChancePairs();
+
+}
+
+async function innerArbitrage() {
+  functions.logger.info("invoked: innerArbitrage", {});
+  
+  const chancePairs = await getArbitrageChancePairs(); 
   console.log(chancePairs);
   // for(let i=0; i<chancePairs.length; i++) {
   //   await trade(chancePairs[i])
   // }
-  try {
-    await Promise.all(chancePairs.map(e => trade(e)));
-  } catch (e) {
-    functions.logger.info("error: innerArbitrage: call trade", {error: e});
-  }
+  await Promise.all(chancePairs.map(e => tradeArbitrage(e)));
   functions.logger.info("fin: innerArbitrage", {});
 }
 
-async function trade(chancePair) {
+async function tradeArbitrage(chancePair) {
   functions.logger.info("invoked: -- trade", chancePair);
   bitbank.createLimitBuyOrder(chancePair.root.symbol, chancePair.root.amount, chancePair.root.bid)
   bitbank.createLimitBuyOrder(chancePair.mid.symbol, chancePair.mid.amount, chancePair.mid.bid)
