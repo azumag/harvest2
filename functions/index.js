@@ -50,8 +50,9 @@ if (process.env.apikey) {
 async function getAskBid(symbol) {
   const orderBook = orderBooks[symbol] ? orderBooks[symbol] : await bitbank.fetchOrderBook(symbol);
   orderBooks[symbol] = orderBook;
-  ask = orderBook.asks[0][0];
-  bid = orderBook.bids[0][0];
+  // why inversed?
+  ask = orderBook.bids[0][0];
+  bid = orderBook.asks[0][0];
   return { orderBook, ask, bid };
 }
 
@@ -114,6 +115,7 @@ async function getArbitrageChancePairs() {
           symbol: midSymbol,
           amount: midBuy,
           bid: midAskBid.bid,
+          ask: midAskBid.ask,
           buy: leastAmount,
           fee: midFee,
         },
