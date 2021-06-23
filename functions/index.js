@@ -115,11 +115,10 @@ async function innerArbitrage() {
             rootFee: rootBuy + midFee
           };
         }
-        const rootBuy = rootAskBid.bid * leastAmount;
-        const rootFee = rootBuy * tradingFeeRate;
+        const rootFee = leastAmount * rootAskBid.bid * tradingFeeRate;
         return {
           midBuy: estimate,
-          rootBuy,
+          rootBuy: leastAmount,
           rootFee,
           midFee
         };
@@ -132,15 +131,14 @@ async function innerArbitrage() {
 
       const goalSell = goalAskBid.ask * midBuy;
       const goalFee = goalSell * tradingFeeRate;
-      const total = (goalSell - goalFee) - rootBuy;
+      const total = (goalSell - goalFee) - (rootBuy * rootAskBid.bid);
       const totalWithFee = total - rootFee;
 
       const output = {
         root: {
           symbol,
-          amount: leastAmount,
+          amount: rootBuy,
           bid: rootAskBid.bid,
-          buy: rootBuy,
           fee: rootFee
         },
         mid: {
@@ -148,7 +146,6 @@ async function innerArbitrage() {
           amount: midBuy,
           bid: midAskBid.bid,
           ask: midAskBid.ask,
-          buy: leastAmount,
           fee: midFee,
         },
         goal: {
