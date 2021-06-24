@@ -13,7 +13,19 @@ function floorDecimal(value, n) {
   return Math.floor(value * Math.pow(10, n) ) / Math.pow(10, n);
 }
 
-const leastAmount = 0.001;
+const leastAmount = 0.0001;
+const leastAmountMap = {
+  BTC: 0.001,
+  ETH: 0.001,
+  LTC: 0.001,
+  BCC: 0.001,
+  MONA: 1,
+  XRP: 1,
+  XLM: 1,
+  QTUM: 1,
+  BAT: 1,
+  JPY: 1000,
+}
 const tradingFeeRate = 0.0012;
 const thresholdBenefit = 0;
 const currencyPairs = [
@@ -52,10 +64,12 @@ if (process.env.apikey) {
 }
 
 async function getAskBid(symbol) {
-  const orderBook = orderBooks[symbol] ? orderBooks[symbol] 
-    : await bitbank.fetchOrderBook(symbol, 1, {limit: 1});
+  // const orderBook = orderBooks[symbol] ? orderBooks[symbol] 
+  //   : await bitbank.fetchOrderBook(symbol, 1, {limit: 1});
 
   // orderBooks[symbol] = orderBook; // For performance
+
+  const orderBook = await bitbank.fetchOrderBook(symbol);
 
   // why inversed?
   const ask = orderBook.bids[0][0];
@@ -75,7 +89,6 @@ async function onTickExport() {
 async function innerArbitrage() {
   // TODO: inversed arbitrage
   functions.logger.info("invoked: innerArbitrage", {});
-  const chancePairs = [];
     
   for(let i=0; i < currencyPairs.length; i++) {
     const symbol = currencyPairs[i];
@@ -84,6 +97,7 @@ async function innerArbitrage() {
 
     const midPairs = currencyPairs.filter((targSym) => {
       return targSym != symbol && targSym.includes('/'+targCurrency);
+      // return targSym != symbol && targSym.includes(targCurrency);
     });
 
     if (midPairs.length > 0) {
@@ -93,88 +107,100 @@ async function innerArbitrage() {
     for(let j=0; j < midPairs.length; j++) {
       const midSymbol = midPairs[j];
       const midTargCurrency = midSymbol.match(/(.+)\//)[1];
-      const goalSymbol = midTargCurrency + '/' + rootCurrency;
+      const midRootCurrency = midSymbol.match(/\/(.+)/)[1];
+      const isAsk = midTargCurrency === targCurrency
+      const goalSymbol = isAsk ? midRootCurrency + '/' + rootCurrency 
+                               : midTargCurrency + '/' + rootCurrency;
 
-      // TODO: speedify
-      const askBids = await Promise.all([
+      // const askBids = await Promise.all([
+      // functions.logger.info("innerArbitrage: Promise set", {});
+      Promise.all([
         getAskBid(symbol),
         getAskBid(midSymbol),
         getAskBid(goalSymbol)
-      ]);
-      const rootAskBid = askBids[0];
-      const midAskBid = askBids[1];
-      const goalAskBid = askBids[2];
+      ]).then((askBids) => {
+        const rootAskBid = askBids[0];
+        const midAskBid = askBids[1];
+        const goalAskBid = askBids[2];
 
-      // fee = price * amount * feerate
-      const buyEstimation = (() => {
-        const midFee = leastAmount * midAskBid.bid * tradingFeeRate;
-        const estimate = ((leastAmount - midFee) / midAskBid.bid);
-        if (estimate > midAskBid.bidAmount) {
-          const midFee = midAskBid.bidAmount * midAskBid.bid * tradingFeeRate;
-          const rootBuy = midAskBid.bidAmount * midAskBid.bid + midFee;
+        // fee = price * amount * feerate
+        const buyEstimation = (() => {
+          const midCost = isAsk ? midAskBid.ask : midAskBid.bid;
+          const midAmount = isAsk ? midAskBid.askAmount : midAskBid.bidAmount;
+          const midFee = leastAmount * midCost * tradingFeeRate;
+          const estimate = ((leastAmount - midFee) / midCost);
+          if (estimate > midAmount) {
+            const midFee = midAmount * midCost * tradingFeeRate;
+            const rootBuy = midAmount * midCost + midFee;
+            return {
+              estimate,
+              midBuy: midAmount,
+              midFee,
+              rootBuy,
+              rootFee: rootBuy + midFee
+            };
+          }
+          const rootFee = leastAmount * rootAskBid.bid * tradingFeeRate;
           return {
             estimate,
-            midBuy: midAskBid.bidAmount,
-            midFee,
-            rootBuy,
-            rootFee: rootBuy + midFee
+            midBuy: estimate,
+            rootBuy: leastAmount,
+            rootFee,
+            midFee
           };
-        }
-        const rootFee = leastAmount * rootAskBid.bid * tradingFeeRate;
-        return {
-          estimate,
-          midBuy: estimate,
-          rootBuy: leastAmount,
-          rootFee,
-          midFee
+        })();
+        const midBuy = buyEstimation.midBuy;
+        const midFee = buyEstimation.midFee;
+        const rootBuy = buyEstimation.rootBuy;
+        const rootFee = buyEstimation.rootFee;
+
+        console.log(buyEstimation);
+
+        const goalCost = isAsk ? goalAskBid.bid : goalAskBid.ask; 
+        const goalSell = goalCost * midBuy;
+        const goalFee = goalSell * tradingFeeRate;
+        const total = (goalSell - goalFee) - (rootBuy * rootAskBid.bid);
+        const totalWithFee = total - rootFee;
+
+        const output = {
+          root: {
+            symbol,
+            amount: rootBuy,
+            bid: rootAskBid.bid,
+            fee: rootFee
+          },
+          mid: {
+            symbol: midSymbol,
+            amount: midBuy,
+            bid: midAskBid.bid,
+            ask: midAskBid.ask,
+            fee: midFee,
+          },
+          goal: {
+            symbol: goalSymbol,
+            amount: midBuy,
+            ask: goalAskBid.ask,
+            sell: goalSell,
+            fee: goalFee,
+          },
+          isAsk,
+          estimate: buyEstimation.estimate,
+          midBidAmount: midAskBid.bidAmount,
+          midBidPrice: midAskBid.bid,
+          total,
+          totalWithFee,
         };
-      })();
-      const midBuy = buyEstimation.midBuy;
-      const midFee = buyEstimation.midFee;
-      const rootBuy = buyEstimation.rootBuy;
-      const rootFee = buyEstimation.rootFee;
-
-      const goalSell = goalAskBid.ask * midBuy;
-      const goalFee = goalSell * tradingFeeRate;
-      const total = (goalSell - goalFee) - (rootBuy * rootAskBid.bid);
-      const totalWithFee = total - rootFee;
-
-      const output = {
-        root: {
-          symbol,
-          amount: rootBuy,
-          bid: rootAskBid.bid,
-          fee: rootFee
-        },
-        mid: {
-          symbol: midSymbol,
-          amount: midBuy,
-          bid: midAskBid.bid,
-          ask: midAskBid.ask,
-          fee: midFee,
-        },
-        goal: {
-          symbol: goalSymbol,
-          amount: midBuy,
-          ask: goalAskBid.ask,
-          sell: goalSell,
-          fee: goalFee,
-        },
-        estimate: buyEstimation.estimate,
-        midBidAmount: midAskBid.bidAmount,
-        midBidPrice: midAskBid.bid,
-        total,
-        totalWithFee,
-      };
-      console.log({
-        goalSym: output.goal.symbol,
-        result: output.totalWithFee,
+        console.log({
+          goalSym: output.goal.symbol,
+          result: output.totalWithFee,
+        });
+        if (output.totalWithFee >= thresholdBenefit) {
+          tradeArbitrage(output);
+        }
       });
-      if (output.totalWithFee >= thresholdBenefit) {
-        tradeArbitrage(output);
-      }
       // webhookSend(output);
     };
+    // functions.logger.info("innerArbitrage: Promise end", {});
   };
   functions.logger.info("fin: innerArbitrage", {});
 }
@@ -214,20 +240,19 @@ async function webhookSend(chancePair) {
             + 'fee: ' + chancePair.goal.fee
         }
       ]
-    }
-  ];
-
-  Object.keys(balance.total).forEach((key) => {
-    attachments.push({
+    },
+    {
       color: 'warning',
       fields: [
         {
-          title: key,
-          value: balance.total[key]
+          title: 'Total Balance',
+          value: Object.keys(balance.total).map((key) => {
+            return key + ': ' + balance.total[key]
+          }).join(', ')
         }
       ]
-    });
-  });
+    }
+  ];
 
   return webhook.send({
     username: 'Harvest 2',
