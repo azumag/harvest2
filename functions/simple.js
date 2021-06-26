@@ -9,11 +9,11 @@ exports.onTick = functions
   .timeZone('Asia/Tokyo')
   .onRun(async _ => await onTickExport())
 
-function floorDecimal(value, n) {
-  return Math.floor(value * Math.pow(10, n) ) / Math.pow(10, n);
+function floorDecimal(value, base) {
+  return Math.floor(value * Math.pow(10, base)) / Math.pow(10, base); 
 }
 
-const leastAmount = 0.0001;
+const leastAmount = 0.0002;
 const leastAmountMap = {
   BTC: 0.001,
   ETH: 0.001,
@@ -33,7 +33,7 @@ const currencyPairs = [
   'XRP/JPY',
   'ETH/JPY',
   'LTC/JPY',
-  'BCC/JPY',
+  'BCH/JPY',
   'MONA/JPY',
   'XLM/JPY',
   'QTUM/JPY',
@@ -112,13 +112,14 @@ async function innerArbitrage() {
       const goalSymbol = isAsk ? midRootCurrency + '/' + rootCurrency 
                                : midTargCurrency + '/' + rootCurrency;
 
-      // const askBids = await Promise.all([
+      const askBids = await Promise.all([
       // functions.logger.info("innerArbitrage: Promise set", {});
-      Promise.all([
+      // Promise.all([
         getAskBid(symbol),
         getAskBid(midSymbol),
         getAskBid(goalSymbol)
-      ]).then((askBids) => {
+      ]);
+      // .then((askBids) => {
         const rootAskBid = askBids[0];
         const midAskBid = askBids[1];
         const goalAskBid = askBids[2];
@@ -197,7 +198,7 @@ async function innerArbitrage() {
         if (output.totalWithFee >= thresholdBenefit) {
           tradeArbitrage(output);
         }
-      });
+      // });
       // webhookSend(output);
     };
     // functions.logger.info("innerArbitrage: Promise end", {});
@@ -255,9 +256,9 @@ async function webhookSend(chancePair) {
   ];
 
   return webhook.send({
-    username: 'Harvest 2',
+    username: 'Harvest 2: Simple',
     icon_emoji: ':moneybag:',
-    text: 'Result: ' + chancePair.totalWithFee + ' yen'
+    text: 'Result: ' + floorDecimal(chancePair.totalWithFee, 5) + ' yen'
       + '\n JPY: ' + balance.total.JPY + ' yen',
     attachments
   });
