@@ -10,13 +10,14 @@ exports.onTick = functions
   .timeZone('Asia/Tokyo')
   .onRun(async _ => await onTickExport())
 
-function floorDecimal(value, base) {
-  return Math.floor(value * base) / base;
+function floorDecimal(value, n) {
+  const pow = Math.pow(10, n);
+  return Math.floor(value * pow) / pow;
 }
 
 const leastAmount = 0.0001;
-// TODO: saitei suuryou dynamically
-// (0.0001 * 3774001)/70 = 5 = saitei suuryou
+const tradingFee = 0.0012;
+const tradingFeeRate = tradingFee + 1;
 const units = {
   JPY: 1000
 };
@@ -32,7 +33,6 @@ const units = {
 //   BAT: 10,
 //   JPY: 1000,
 // }
-const tradingFeeRate = 1.0012;
 const thresholdBenefit = 0;
 const currencyPairs = [
   'BTC/JPY',
@@ -171,162 +171,88 @@ function getSymbolWithDirection(rootCurrency, targCurrency) {
 }
 
 
-async function estimateAndOrder(routes, orderChain) {
+async function estimateAndOrder(routes, orderBooks) {
   const symbolWithDirection = getSymbolWithDirection(routes.rootCurrency, routes.targCurrency);
   const orderBook = await getOrderBook(symbolWithDirection.symbol)
 
-  orderChain.push({symbolWithDirection, orderBook})
+  orderBooks.push({
+    ...symbolWithDirection,
+    ...orderBook
+  });
 
   if (routes.next !== undefined) {
     for(let i=0; i<routes.next.length; i++) {
       const _next = routes.next[i];
-      await estimateAndOrder(_next, Array.from(orderChain));
+      await estimateAndOrder(_next, Array.from(orderBooks));
     }
   } else {
     // last node
     // console.log(orderChain);
-    const planToOrder = [];
-    for(let i=0; i<orderChain.length; i++) {
-      const prevChain = orderChain[i-1];
-      const chain = orderChain[i];
-      const nextChain = orderChain[i+1];
+    orderBooks.reverse();
+    for(let i=0; i<orderBooks.length; i++) {
+      const orderBook = orderBooks[i];
+      const nextOrder = orderBooks[i-1];
 
-      switch (chain.symbolWithDirection.direction) {
+      switch (orderBook.direction) {
         case 'sell':
-          if (!nextChain) {
-            // console.log({nonext: true, chain});
-            const prevAmount = prevChain.symbolWithDirection.direction === 'buy' ? 
-              prevChain.orderBook.amount.bid :
-              prevChain.orderBook.amount.ask
-            const amount = Math.min(prevAmount, chain.orderBook.amount.ask, units[chain.symbolWithDirection.targCurrency]);
-            const price = chain.orderBook.price.ask;
-            const cost = amount * price;
-            const costWithFee = cost * tradingFeeRate;
-
-            planToOrder.push({
-              trade: 'sell',
-              symbol: chain.symbolWithDirection.symbol,
-              amount,
-              price,
-              cost,
-              costWithFee
-            });
-            break;
+          if (!nextOrder) { // means last order
+            orderBook.estimatedAmount = Math.min(orderBook.amount.ask, units[orderBook.targCurrency]);
+            const price = orderBook.price.ask * orderBook.estimatedAmount;
+            orderBook.estimatedCost  = price;
+            orderBook.estimatedResult = price - (price * tradingFee)
+          } else {
+            switch (nextOrder.direction) {
+              case 'buy':
+                orderBook.estimatedAmount = (nextOrder.estimatedCostWithFee * tradingFeeRate) / orderBook.price.ask;
+                orderBook.estimatedCostWithFee = (nextOrder.estimatedCostWithFee * tradingFeeRate);
+                break;
+              case 'sell':
+                const estimatedCostWithFee = nextOrder.estimatedAmount * tradingFeeRate;
+                orderBook.estimatedAmount = estimatedCostWithFee / orderBook.price.ask;
+                orderBook.estimatedCostWithFee = estimatedCostWithFee;
+                break;
+              default:
+                break;
+            }
           }
-          switch (nextChain.symbolWithDirection.direction) {
-            case 'buy':
-              // same as sellsell
-              // console.log({selbuy: true, chain, nextChain})
-              const amount = Math.min(
-                units[chain.symbolWithDirection.targCurrency],
-                chain.orderBook.amount.ask
-              );
-              const price = chain.orderBook.price.ask;
-              const cost = amount * price;
-              const costWithFee = cost * tradingFeeRate;
-
-              planToOrder.push({
-                trade: 'sell',
-                symbol: chain.symbolWithDirection.symbol,
-                amount,
-                price,
-                cost,
-                costWithFee
-              });
-              break;
-            case 'sell':
-              // console.log({selsel: true, chain, nextChain});
-              {
-                const amount = Math.min(
-                  units[chain.symbolWithDirection.targCurrency],
-                  chain.orderBook.amount.ask
-                );
-                const price = chain.orderBook.price.ask;
-                const cost = amount * price;
-                const costWithFee = cost * tradingFeeRate;
-                planToOrder.push({
-                  trade: 'sell',
-                  symbol: chain.symbolWithDirection.symbol,
-                  amount,
-                  price,
-                  cost,
-                  costWithFee
-                });
-              }
-              break;
-            default:
-              break;
-          }
+          orderBook.estimatedPrice = orderBook.price.ask;
           break;
         case 'buy':
-          if (!nextChain) {
-            // first buy
-            const amount = Math.min(chain.orderBook.amount.bid, units[chain.symbolWithDirection.targCurrency]);
-            const price = chain.orderBook.price.bid;
-            const cost = amount * price;
-            const costWithFee = cost * tradingFeeRate;
-            planToOrder.push({
-              trade: 'buy',
-              symbol: chain.symbolWithDirection.symbol,
-              amount,
-              price ,
-              cost,
-              costWithFee
-            });
-            break;
-          };
-          switch (nextChain.symbolWithDirection.direction) {
-            case 'buy':
-              // console.log({buybuy: true, chain, nextChain})
-              const nextChainAmount = Math.min(nextChain.orderBook.amount.bid, units[nextChain.symbolWithDirection.targCurrency]);
-              const amount = Math.min(nextChainAmount * nextChain.orderBook.price.bid, units[chain.symbolWithDirection.targCurrency])
-              const price = chain.orderBook.price.bid;
-              const cost = amount * price;
-              const costWithFee = cost * tradingFeeRate;
-              planToOrder.push({
-                trade: 'buy',
-                symbol: chain.symbolWithDirection.symbol,
-                amount,
-                price,
-                cost,
-                costWithFee 
-              });
-              break;
-            case 'sell':
-              // console.log({buysel: true, chain, nextChain})
-              {
-                const amount = Math.min(chain.orderBook.amount.bid, nextChain.orderBook.amount.ask, units[chain.symbolWithDirection.targCurrency]);
-                const price = chain.orderBook.price.bid;
-                const cost = amount * price;
-                const costWithFee = cost * tradingFeeRate;
-                planToOrder.push({
-                  trade: 'buy',
-                  symbol: chain.symbolWithDirection.symbol,
-                  amount,
-                  price,
-                  cost,
-                  costWithFee
-                });
-              }
-              break;
-            default:
-              break;
+          if (!nextOrder) {
+            orderBook.estimatedAmount = Math.min(orderBook.amount.bid, units[orderBook.targCurrency]);
+            orderBook.estimatedResult = orderBook.estimatedAmount;
+          } else {
+            switch (nextOrder.direction) {
+              case 'buy':
+                orderBook.estimatedAmount = nextOrder.estimatedCostWithFee;
+                break;
+              case 'sell':
+                orderBook.estimatedAmount = nextOrder.estimatedAmount;
+                break;
+              default:
+                break;
+            }
           }
+          orderBook.estimatedPrice  = orderBook.price.bid;
+          orderBook.estimatedCost   = orderBook.estimatedPrice * orderBook.estimatedAmount;
+          orderBook.estimatedCostWithFee = orderBook.estimatedCost * tradingFeeRate;
           break;
         default:
           break;
       }
     }
-    console.log(planToOrder);
     // estimate
-    const firstOrder = planToOrder[0];
-    const lastOrder = planToOrder.slice(-1)[0];
-    const benefit = lastOrder.cost - firstOrder.cost;
-    // if (benefit > leastAmount) {
-    if (benefit > 1) {
+    orderBooks.reverse();
+    const firstOrder = orderBooks[0];
+    const lastOrder  = orderBooks.slice(-1)[0];
+    const benefit    = lastOrder.estimatedResult - firstOrder.estimatedCostWithFee;
+
+    console.log({orderBooks, benefit});
+    if (benefit > leastAmount) {
+    // if (benefit > 1) {
       // and order
-      webhookSend(planToOrder, benefit);
-      planToOrder.forEach(order => {
+      webhookSend(orderBooks, benefit);
+      orderBooks.forEach(order => {
         trade(order)
       })
     }
@@ -344,10 +270,12 @@ async function innerArbitrage() {
     const targCurrency = symbol.match(/(.+)\//)[1];
     const routes = findNextPairs(rootCurrency, targCurrency, rootCurrency, true);
 
-    if (symbol === 'BTC/JPY') {
+    // if (symbol === 'BTC/JPY') {
+    // if (symbol === 'XRP/JPY') {
+    // if (symbol === 'XRP/BTC') {
       console.log(routes);
       await estimateAndOrder(routes, []);
-    }
+    // }
   };
   functions.logger.info("fin: innerArbitrage", {});
 }
@@ -360,11 +288,11 @@ async function webhookSend(orders, benefit) {
       fields: [
         {
           title: order.symbol,
-          value: 'amount: ' + order.amount + '\n'
-            + 'cost: ' + order.cost + '\n' 
-            + 'price: ' + order.price + '\n' 
-            + 'trade: ' + order.trade + '\n' 
-            // + 'fee: ' + chancePair.root.fee
+          value: 'amount: ' + order.estimatedAmount + '\n'
+            + 'cost: ' + order.estimatedCost+ '\n' 
+            + 'price: ' + order.estimatedPrice + '\n' 
+            + 'trade: ' + order.direction + '\n' 
+            + order.estimatedResult ? 'result: ' + order.estimatedResult : ''
         }
       ]
     }
@@ -384,7 +312,7 @@ async function webhookSend(orders, benefit) {
   return webhook.send({
     username: 'Harvest 2: All trace',
     icon_emoji: ':moneybag:',
-    text: 'Result: ' + benefit + ' yen'
+    text: 'Result: ' + floorDecimal(benefit, 4) + ' yen'
       + '\n JPY: ' + balance.total.JPY + ' yen',
     attachments
   });
@@ -392,12 +320,12 @@ async function webhookSend(orders, benefit) {
 
 async function trade(order) {
   functions.logger.info("invoked: -- trade", order);
-  switch (order.trade) {
+  switch (order.direction) {
     case 'sell':
-      bitbank.createLimitSellOrder(order.symbol, order.amount, order.price)
+      bitbank.createLimitSellOrder(order.symbol, order.estimatedAmount, order.estimatedPrice);
       break;
     case 'buy':
-      bitbank.createLimitBuyOrder(order.symbol, order.amount, order.price)
+      bitbank.createLimitBuyOrder(order.symbol, order.estimatedAmount, order.estimatedPrice);
       break;
     default:
       break;
