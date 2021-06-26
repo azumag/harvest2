@@ -2,7 +2,6 @@ const functions = require("firebase-functions");
 // const admin = require("firebase-admin");
 const ccxt = require('ccxt');
 const { IncomingWebhook } = require('@slack/webhook');
-const { extractInstanceAndPath } = require("firebase-functions/lib/providers/database");
 
 exports.onTick = functions
   .region('asia-northeast1')
@@ -53,7 +52,7 @@ const currencyPairs = [
   'QTUM/BTC',
   'BAT/BTC',
 ];
-let orderBooks = {}
+let allOrderBooks = {}
 
 /// == prepare exchanges 
 const bitbank = new ccxt.bitbank();
@@ -105,10 +104,10 @@ async function getTickerLasts() {
 }
 
 async function getOrderBook(symbol) {
-  const orderBook = orderBooks[symbol] ? orderBooks[symbol] 
+  const orderBook = allOrderBooks[symbol] ? allOrderBooks[symbol] 
     : await bitbank.fetchOrderBook(symbol, 1, {limit: 1});
 
-  // orderBooks[symbol] = orderBook; // For performance
+  allOrderBooks[symbol] = orderBook; // For performance
 
   // CHECK: why ask/bid inversed?
   return { 
@@ -183,7 +182,8 @@ async function estimateAndOrder(routes, orderBooks) {
   if (routes.next !== undefined) {
     for(let i=0; i<routes.next.length; i++) {
       const _next = routes.next[i];
-      await estimateAndOrder(_next, Array.from(orderBooks));
+      // await estimateAndOrder(_next, Array.from(orderBooks));
+      estimateAndOrder(_next, Array.from(orderBooks));
     }
   } else {
     // last node
@@ -248,7 +248,7 @@ async function estimateAndOrder(routes, orderBooks) {
     const benefit    = lastOrder.estimatedResult - firstOrder.estimatedCostWithFee;
 
     console.log({orderBooks, benefit});
-    if (benefit > leastAmount) {
+    if (benefit > 0) {
     // if (benefit > 1) {
       // and order
       webhookSend(orderBooks, benefit);
@@ -274,14 +274,14 @@ async function innerArbitrage() {
     // if (symbol === 'XRP/JPY') {
     // if (symbol === 'XRP/BTC') {
       console.log(routes);
-      await estimateAndOrder(routes, []);
+      estimateAndOrder(routes, []);
     // }
   };
   functions.logger.info("fin: innerArbitrage", {});
 }
 
 async function webhookSend(orders, benefit) {
-  const balance = await bitbank.fetchBalance()
+  const balance = await bitbank.fetchBalance();
   let attachments = orders.map(order => {
     return {
       color: 'good',
