@@ -13,7 +13,7 @@ function floorDecimal(value, base) {
   return Math.floor(value * Math.pow(10, base)) / Math.pow(10, base); 
 }
 
-const leastAmount = 0.0002;
+const leastAmount = 0.0001;
 const leastAmountMap = {
   BTC: 0.001,
   ETH: 0.001,
@@ -63,13 +63,26 @@ if (process.env.apikey) {
   onTickExport();
 }
 
-async function getAskBid(symbol) {
+async function getAllaskBid() {
+  const limit = 1;
+  const allorderbooks = await Promise.all(currencyPairs.map((symbol) => {
+    return bitbank.fetchOrderBook(symbol, limit);
+  }))
+  allorderbooks.forEach(orderBook => {
+    orderBooks[orderBook.symbol] = orderBook;
+  });
+}
+
+// async function getAskBid(symbol) {
+function getAskBid(symbol) {
   // const orderBook = orderBooks[symbol] ? orderBooks[symbol] 
   //   : await bitbank.fetchOrderBook(symbol, 1, {limit: 1});
 
   // orderBooks[symbol] = orderBook; // For performance
 
-  const orderBook = await bitbank.fetchOrderBook(symbol);
+  // const orderBook = await bitbank.fetchOrderBook(symbol);
+
+  const orderBook = orderBooks[symbol];
 
   // why inversed?
   const ask = orderBook.bids[0][0];
@@ -82,7 +95,8 @@ async function getAskBid(symbol) {
 
 async function onTickExport() {
   functions.logger.info("invoked", {});
-  await innerArbitrage();
+  await getAllaskBid();
+  innerArbitrage();
   functions.logger.info("fin", {});
 }
 
@@ -97,7 +111,6 @@ async function innerArbitrage() {
 
     const midPairs = currencyPairs.filter((targSym) => {
       return targSym != symbol && targSym.includes('/'+targCurrency);
-      // return targSym != symbol && targSym.includes(targCurrency);
     });
 
     if (midPairs.length > 0) {
@@ -106,104 +119,110 @@ async function innerArbitrage() {
 
     for(let j=0; j < midPairs.length; j++) {
       const midSymbol = midPairs[j];
-      const midTargCurrency = midSymbol.match(/(.+)\//)[1];
-      const midRootCurrency = midSymbol.match(/\/(.+)/)[1];
-      const isAsk = midTargCurrency === targCurrency
-      const goalSymbol = isAsk ? midRootCurrency + '/' + rootCurrency 
-                               : midTargCurrency + '/' + rootCurrency;
-
-      const askBids = await Promise.all([
-      // functions.logger.info("innerArbitrage: Promise set", {});
-      // Promise.all([
-        getAskBid(symbol),
-        getAskBid(midSymbol),
-        getAskBid(goalSymbol)
-      ]);
-      // .then((askBids) => {
-        const rootAskBid = askBids[0];
-        const midAskBid = askBids[1];
-        const goalAskBid = askBids[2];
-
-        // fee = price * amount * feerate
-        const buyEstimation = (() => {
-          const midCost = isAsk ? midAskBid.ask : midAskBid.bid;
-          const midAmount = isAsk ? midAskBid.askAmount : midAskBid.bidAmount;
-          const midFee = leastAmount * midCost * tradingFeeRate;
-          const estimate = ((leastAmount - midFee) / midCost);
-          if (estimate > midAmount) {
-            const midFee = midAmount * midCost * tradingFeeRate;
-            const rootBuy = midAmount * midCost + midFee;
-            return {
-              estimate,
-              midBuy: midAmount,
-              midFee,
-              rootBuy,
-              rootFee: rootBuy + midFee
-            };
-          }
-          const rootFee = leastAmount * rootAskBid.bid * tradingFeeRate;
-          return {
-            estimate,
-            midBuy: estimate,
-            rootBuy: leastAmount,
-            rootFee,
-            midFee
-          };
-        })();
-        const midBuy = buyEstimation.midBuy;
-        const midFee = buyEstimation.midFee;
-        const rootBuy = buyEstimation.rootBuy;
-        const rootFee = buyEstimation.rootFee;
-
-        console.log(buyEstimation);
-
-        const goalCost = isAsk ? goalAskBid.bid : goalAskBid.ask; 
-        const goalSell = goalCost * midBuy;
-        const goalFee = goalSell * tradingFeeRate;
-        const total = (goalSell - goalFee) - (rootBuy * rootAskBid.bid);
-        const totalWithFee = total - rootFee;
-
-        const output = {
-          root: {
-            symbol,
-            amount: rootBuy,
-            bid: rootAskBid.bid,
-            fee: rootFee
-          },
-          mid: {
-            symbol: midSymbol,
-            amount: midBuy,
-            bid: midAskBid.bid,
-            ask: midAskBid.ask,
-            fee: midFee,
-          },
-          goal: {
-            symbol: goalSymbol,
-            amount: midBuy,
-            ask: goalAskBid.ask,
-            sell: goalSell,
-            fee: goalFee,
-          },
-          isAsk,
-          estimate: buyEstimation.estimate,
-          midBidAmount: midAskBid.bidAmount,
-          midBidPrice: midAskBid.bid,
-          total,
-          totalWithFee,
-        };
-        console.log({
-          goalSym: output.goal.symbol,
-          result: output.totalWithFee,
-        });
-        if (output.totalWithFee >= thresholdBenefit) {
-          tradeArbitrage(output);
-        }
-      // });
-      // webhookSend(output);
+      estimateAndOrder(symbol, midSymbol, targCurrency, rootCurrency)
     };
-    // functions.logger.info("innerArbitrage: Promise end", {});
   };
   functions.logger.info("fin: innerArbitrage", {});
+}
+
+async function estimateAndOrder(symbol, midSymbol, targCurrency, rootCurrency) {
+  const midTargCurrency = midSymbol.match(/(.+)\//)[1];
+  const midRootCurrency = midSymbol.match(/\/(.+)/)[1];
+  const isAsk = midTargCurrency === targCurrency
+  const goalSymbol = isAsk ? midRootCurrency + '/' + rootCurrency 
+                            : midTargCurrency + '/' + rootCurrency;
+
+  // const askBids = await Promise.all([
+  // functions.logger.info("innerArbitrage: Promise set", {});
+  // Promise.all([
+  //   getAskBid(symbol),
+  //   getAskBid(midSymbol),
+  //   getAskBid(goalSymbol)
+  // ])//;
+  // .then((askBids) => {
+  // const rootAskBid = askBids[0];
+  // const midAskBid = askBids[1];
+  // const goalAskBid = askBids[2];
+
+  const rootAskBid = getAskBid(symbol);
+  const midAskBid = getAskBid(midSymbol);
+  const goalAskBid = getAskBid(goalSymbol);
+
+  // fee = price * amount * feerate
+  const buyEstimation = (() => {
+    const midCost = isAsk ? midAskBid.ask : midAskBid.bid;
+    const midAmount = isAsk ? midAskBid.askAmount : midAskBid.bidAmount;
+    const midFee = leastAmount * midCost * tradingFeeRate;
+    const estimate = ((leastAmount - midFee) / midCost);
+    if (estimate > midAmount) {
+      const midFee = midAmount * midCost * tradingFeeRate;
+      const rootBuy = midAmount * midCost + midFee;
+      return {
+        estimate,
+        midBuy: midAmount,
+        midFee,
+        rootBuy,
+        rootFee: rootBuy + midFee
+      };
+    }
+    const rootFee = leastAmount * rootAskBid.bid * tradingFeeRate;
+    return {
+      estimate,
+      midBuy: estimate,
+      rootBuy: leastAmount,
+      rootFee,
+      midFee
+    };
+  })();
+  const midBuy = buyEstimation.midBuy;
+  const midFee = buyEstimation.midFee;
+  const rootBuy = buyEstimation.rootBuy;
+  const rootFee = buyEstimation.rootFee;
+
+  console.log(buyEstimation);
+
+  const goalCost = isAsk ? goalAskBid.bid : goalAskBid.ask; 
+  const goalSell = goalCost * midBuy;
+  const goalFee = goalSell * tradingFeeRate;
+  const total = (goalSell - goalFee) - (rootBuy * rootAskBid.bid);
+  const totalWithFee = total - rootFee;
+
+  const output = {
+    root: {
+      symbol,
+      amount: rootBuy,
+      bid: rootAskBid.bid,
+      fee: rootFee
+    },
+    mid: {
+      symbol: midSymbol,
+      amount: midBuy,
+      bid: midAskBid.bid,
+      ask: midAskBid.ask,
+      fee: midFee,
+    },
+    goal: {
+      symbol: goalSymbol,
+      amount: midBuy,
+      ask: goalAskBid.ask,
+      sell: goalSell,
+      fee: goalFee,
+    },
+    isAsk,
+    estimate: buyEstimation.estimate,
+    midBidAmount: midAskBid.bidAmount,
+    midBidPrice: midAskBid.bid,
+    total,
+    totalWithFee,
+  };
+  console.log({
+    goalSym: output.goal.symbol,
+    result: output.totalWithFee,
+  });
+  if (output.totalWithFee >= thresholdBenefit) {
+    tradeArbitrage(output);
+  }
+// });
 }
 
 async function webhookSend(chancePair) {

@@ -70,7 +70,10 @@ if (process.env.apikey) {
 
 async function onTickExport() {
   functions.logger.info("invoked", {});
-  await setUnits();
+  await Promise.all([
+    setUnits(),
+    getAllOrderBooks()
+  ])
   await innerArbitrage();
   functions.logger.info("fin", {});
 }
@@ -103,11 +106,26 @@ async function getTickerLasts() {
   }));
 }
 
-async function getOrderBook(symbol) {
-  const orderBook = allOrderBooks[symbol] ? allOrderBooks[symbol] 
-    : await bitbank.fetchOrderBook(symbol, 1, {limit: 1});
+async function getAllOrderBooks() {
+  functions.logger.info("invoked: getAllOrderBooks", {});
+  const limit = 1;
+  const _allorderbooks = await Promise.all(currencyPairs.map((symbol) => {
+    return bitbank.fetchOrderBook(symbol, limit);
+  }))
+  _allorderbooks.forEach(orderBook => {
+    allOrderBooks[orderBook.symbol] = orderBook;
+  });
+  functions.logger.info("fin: getAllOrderBooks", {});
+}
 
-  allOrderBooks[symbol] = orderBook; // For performance
+// async function getOrderBook(symbol) {
+function getOrderBook(symbol) {
+  // const orderBook = allOrderBooks[symbol] ? allOrderBooks[symbol] 
+  //   : await bitbank.fetchOrderBook(symbol, 1, {limit: 1});
+
+  // allOrderBooks[symbol] = orderBook; // For performance
+
+  const orderBook = allOrderBooks[symbol];
 
   // CHECK: why ask/bid inversed?
   return { 
@@ -172,7 +190,8 @@ function getSymbolWithDirection(rootCurrency, targCurrency) {
 
 async function estimateAndOrder(routes, orderBooks) {
   const symbolWithDirection = getSymbolWithDirection(routes.rootCurrency, routes.targCurrency);
-  const orderBook = await getOrderBook(symbolWithDirection.symbol)
+  // const orderBook = await getOrderBook(symbolWithDirection.symbol);
+  const orderBook = getOrderBook(symbolWithDirection.symbol);
 
   orderBooks.push({
     ...symbolWithDirection,
@@ -292,7 +311,7 @@ async function webhookSend(orders, benefit) {
             + 'cost: ' + order.estimatedCost+ '\n' 
             + 'price: ' + order.estimatedPrice + '\n' 
             + 'trade: ' + order.direction + '\n' 
-            + order.estimatedResult ? 'result: ' + order.estimatedResult : ''
+            // + order.estimatedResult ? 'result: ' + order.estimatedResult : ''
         }
       ]
     }
@@ -312,7 +331,7 @@ async function webhookSend(orders, benefit) {
   return webhook.send({
     username: 'Harvest 2: All trace',
     icon_emoji: ':moneybag:',
-    text: 'Result: ' + floorDecimal(benefit, 4) + ' yen'
+    text: 'Result: ' + floorDecimal(benefit, 6) + ' unit'
       + '\n JPY: ' + balance.total.JPY + ' yen',
     attachments
   });
