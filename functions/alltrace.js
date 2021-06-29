@@ -32,7 +32,7 @@ const units = {
 //   BAT: 10,
 //   JPY: 1000,
 // }
-const thresholdBenefit = 0;
+const thresholdBenefit = 1;
 const currencyPairs = [
   'BTC/JPY',
   'XRP/JPY',
@@ -267,8 +267,11 @@ async function estimateAndOrder(routes, orderBooks) {
     const benefit    = lastOrder.estimatedResult - firstOrder.estimatedCostWithFee;
 
     console.log({orderBooks, benefit});
-    if (benefit > 0) {
-    // if (benefit > 1) {
+    let threshold = thresholdBenefit;
+    if (firstOrder.rootCurrency !== 'JPY') {
+      threshold = 0.000001;
+    }
+    if (benefit > threshold) {
       // and order
       webhookSend(orderBooks, benefit);
       orderBooks.forEach(order => {

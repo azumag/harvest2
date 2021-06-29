@@ -6,12 +6,19 @@ const { IncomingWebhook } = require('@slack/webhook');
 
 const period = 20;
 const sigma = 2;
+const feeRate = 0.0012;
+
 const leastAmount = process.env.leastAmount ? process.env.leastAmount : 0.0001;
 const symbol = process.env.symbol ? process.env.symbol : 'BTC/JPY';
+const exchangeId = process.env.exchangeId ? process.env.exchangeId : 'bitbank';
 
-const bitbank = new ccxt.bitbank();
-bitbank.apiKey = functions.config().bitbank ? functions.config().bitbank.apikey : process.env.apikey;
-bitbank.secret = functions.config().bitbank ? functions.config().bitbank.secret : process.env.secret;
+const exchange = new ccxt[exchangeId];
+exchange.apiKey = functions.config()[exchangeId] ? 
+  functions.config()[exchangeId].apikey 
+  : process.env.apikey;
+exchange.secret = functions.config()[exchangeId] ?
+  functions.config()[exchangeId].secret 
+  : process.env.secret;
 
 /// prepare slack webhook
 const url = functions.config().slack ? functions.config().slack : process.env.slack;
@@ -22,7 +29,15 @@ if (process.env.apikey) {
     credential: admin.credential.applicationDefault(),
     databaseURL: firebaseConfig.databaseURL
   })
-  onTickExport();
+  try {
+    onTickExport();
+  } catch (e) {
+    webhook.send({
+      username: 'Harvest 2: BB',
+      icon_emoji: ':moneybag:',
+      text: 'ERROR' + e
+    });
+  }
 }
 
 async function onTickExport() {
@@ -36,7 +51,7 @@ async function onTickExport() {
     await BBSignalOrder(tickerHistories, currentTicker);
   }
   console.log({symbol, leastAmount, period, sigma});
-  functions.logger.info("fin", {});
+  functions.logger.info("fin", {exchangeId});
 }
 
 async function BBSignalOrder(tickerHistories, currentTicker) {
@@ -61,11 +76,12 @@ async function BBSignalOrder(tickerHistories, currentTicker) {
   };
   console.log(status);
 
+  const price = (exchangeId === 'bitflyer') ? 0 : bbResultCurrent.last
   if (bbResultBeforeTop < bbResultHistories.last) {
     if (bbResultCurrentTop > bbResultCurrent.last) {
       // sell
-      await bitbank.createOrder(symbol, 'market', 'sell', leastAmount, bbResultCurrent.last);
-      webhookCommandSend({...status, trade: 'sell'});
+      await exchange.createOrder(symbol, 'market', 'sell', leastAmount, price);
+      await webhookCommandSend({...status, trade: 'sell'});
       await recordSellBenefit(bbResultCurrent.last);
     }
   }
@@ -73,7 +89,7 @@ async function BBSignalOrder(tickerHistories, currentTicker) {
   if (bbResultBeforeBottom > bbResultHistories.last) {
     if (bbResultCurrentBottom < bbResultCurrent.last) {
       // buy
-      await bitbank.createOrder(symbol, 'market', 'buy', leastAmount, bbResultCurrent.last);
+      await exchange.createOrder(symbol, 'market', 'buy', leastAmount, price);
       await recordBuyOrder(bbResultCurrent.last);
       webhookCommandSend({...status, trade: 'buy'});
     }
@@ -106,7 +122,7 @@ async function recordSellBenefit(last) {
   const query = await admin
     .firestore()
     .collection('exchanges')
-    .doc('bitbank')
+    .doc(exchangeId)
     .collection('symbols')
     .doc(symbol.replace('/','_'))
     .collection('buyTrades')
@@ -122,13 +138,14 @@ async function recordSellBenefit(last) {
 
   const buyTrade = query.docs[0].data();
 
-  // TODO: calc trade fee
-  const benefit = (leastAmount * last) - (buyTrade.amount * buyTrade.last);
+  const buycost  = buyTrade.amount * buyTrade.last;
+  const sellcost = leastAmount * last;
+  const benefit = sellcost - (buycost + (buycost * feeRate)) - (sellcost * feeRate);
 
   const result = await admin
     .firestore()
     .collection('exchanges')
-    .doc('bitbank')
+    .doc(exchangeId)
     .collection('symbols')
     .doc(symbol.replace('/','_'))
     .collection('results')
@@ -151,7 +168,7 @@ async function recordSellBenefit(last) {
   const deleteQuery = await admin
     .firestore()
     .collection('exchanges')
-    .doc('bitbank')
+    .doc(exchangeId)
     .collection('symbols')
     .doc(symbol.replace('/','_'))
     .collection('buyTrades')
@@ -171,7 +188,7 @@ async function recordSellBenefit(last) {
     const doDeleteQuery = await admin
       .firestore()
       .collection('exchanges')
-      .doc('bitbank')
+      .doc(exchangeId)
       .collection('symbols')
       .doc(symbol.replace('/','_'))
       .collection('buyTrades')
@@ -186,7 +203,7 @@ async function recordBuyOrder(last) {
   const result = await admin
     .firestore()
     .collection('exchanges')
-    .doc('bitbank')
+    .doc(exchangeId)
     .collection('symbols')
     .doc(symbol.replace('/','_'))
     .collection('buyTrades')
@@ -200,19 +217,19 @@ async function recordBuyOrder(last) {
 }
 
 async function recordTicker() {
-  const ticker = await bitbank.fetchTicker(symbol);
+  const ticker = await exchange.fetchTicker(symbol);
   console.log(ticker);
   const result = await admin
     .firestore()
     .collection('exchanges')
-    .doc('bitbank')
+    .doc(exchangeId)
     .collection('symbols')
     .doc(symbol.replace('/','_'))
     .collection('tickers')
     .add({
       last: ticker.last,
-      high: ticker.high,
-      low: ticker.low,
+      high: ticker.high ? ticker.high : null,
+      low: ticker.low ? ticker.low : null,
       ask: ticker.ask,
       bid: ticker.bid,
       timestamp: new Date(ticker.timestamp)
@@ -226,7 +243,7 @@ async function getTickers(period) {
   const query = await admin
     .firestore()
     .collection('exchanges')
-    .doc('bitbank')
+    .doc(exchangeId)
     .collection('symbols')
     .doc(symbol.replace('/','_'))
     .collection('tickers')
@@ -246,13 +263,14 @@ async function webhookBenefitSend(status) {
     username: 'Harvest 2: BB',
     icon_emoji: ':moneybag:',
     text: 'Benefit: ' + status.benefit + " " + symbol
+      + '\n ' + 'exchange : ' + exchangeId
       + '\n ' + 'buy: ' + status.buy
       + '\n ' + 'sell: ' + status.sell
   });
 }
 
 async function webhookCommandSend(status) {
-  const balance = await bitbank.fetchBalance();
+  const balance = await exchange.fetchBalance();
   let attachments = [
     {
       color: 'good',
@@ -286,7 +304,8 @@ async function webhookCommandSend(status) {
     username: 'Harvest 2: BB',
     icon_emoji: ':moneybag:',
     text: 
-      status.trade +  ' ' 
+      exchangeId + ` `
+      + status.trade +  ' ' 
       + (status.currentLast * leastAmount) 
       + " " + symbol,
     attachments

@@ -27,7 +27,7 @@ const leastAmountMap = {
   JPY: 1000,
 }
 const tradingFeeRate = 0.0012;
-const thresholdBenefit = 0;
+const thresholdBenefit = 1;
 const currencyPairs = [
   'BTC/JPY',
   'XRP/JPY',

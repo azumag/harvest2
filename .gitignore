@@ -67,4 +67,5 @@ node_modules/
 
 ./secrets
 bitbank*
+bitflyer*
 .DS_STORE
