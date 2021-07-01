@@ -51,6 +51,8 @@ const currencyPairs = [
   'XLM/BTC',
   'QTUM/BTC',
   'BAT/BTC',
+  'OMG/JPY',
+  'OMG/BTC'
 ];
 let allOrderBooks = {}
 
@@ -314,7 +316,7 @@ async function webhookSend(orders, benefit) {
             + 'cost: ' + order.estimatedCost+ '\n' 
             + 'price: ' + order.estimatedPrice + '\n' 
             + 'trade: ' + order.direction + '\n' 
-            // + order.estimatedResult ? 'result: ' + order.estimatedResult : ''
+            + (order.estimatedResult === undefined) ? '' : ('result: ' + order.estimatedResult)
         }
       ]
     }

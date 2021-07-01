@@ -8,7 +8,7 @@ const period = 20;
 const sigma = 2;
 const feeRate = 0.0012;
 
-const leastAmount = process.env.leastAmount ? process.env.leastAmount : 0.0001;
+const leastAmount = process.env.leastAmount ? parseInt(process.env.leastAmount) : 0.0001;
 const symbol = process.env.symbol ? process.env.symbol : 'BTC/JPY';
 const exchangeId = process.env.exchangeId ? process.env.exchangeId : 'bitbank';
 
@@ -81,7 +81,7 @@ async function BBSignalOrder(tickerHistories, currentTicker) {
     if (bbResultCurrentTop > bbResultCurrent.last) {
       // sell
       await exchange.createOrder(symbol, 'market', 'sell', leastAmount, price);
-      await webhookCommandSend({...status, trade: 'sell'});
+      await webhookCommandSend({...status, trade: 'sell', amount: leastAmount});
       await recordSellBenefit(bbResultCurrent.last);
     }
   }
@@ -89,9 +89,11 @@ async function BBSignalOrder(tickerHistories, currentTicker) {
   if (bbResultBeforeBottom > bbResultHistories.last) {
     if (bbResultCurrentBottom < bbResultCurrent.last) {
       // buy
-      await exchange.createOrder(symbol, 'market', 'buy', leastAmount, price);
+      const bitfFee = (leastAmount * 0.0015);
+      const amount = (exchangeId === 'bitflyer') ? leastAmount + (bitfFee * 2) : leastAmount;
+      await exchange.createOrder(symbol, 'market', 'buy', amount, price);
       await recordBuyOrder(bbResultCurrent.last);
-      webhookCommandSend({...status, trade: 'buy'});
+      webhookCommandSend({...status, trade: 'buy', amount});
     }
   }
 }
@@ -262,10 +264,19 @@ async function webhookBenefitSend(status) {
   return webhook.send({
     username: 'Harvest 2: BB',
     icon_emoji: ':moneybag:',
-    text: 'Benefit: ' + status.benefit + " " + symbol
-      + '\n ' + 'exchange : ' + exchangeId
-      + '\n ' + 'buy: ' + status.buy
-      + '\n ' + 'sell: ' + status.sell
+    attachments:[
+      {
+        color: 'danger',
+        fields: [
+          {
+            title: 'Benefit: ' + status.benefit + " " + symbol,
+            value: 'exchange : ' + exchangeId
+              + '\n ' + 'buy: ' + status.buy
+              + '\n ' + 'sell: ' + status.sell
+          }
+        ] 
+      }
+    ]
   });
 }
 
@@ -284,6 +295,7 @@ async function webhookCommandSend(status) {
             + 'CurrentBottom: ' + status.bbResultCurrentBottom + '\n' 
             + 'BeforeLast: ' + status.beforeLast + '\n' 
             + 'CurrentLast: ' + status.currentLast + '\n' 
+            + 'amount: ' + status.amount + '\n' 
         }
       ]
     }

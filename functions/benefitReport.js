@@ -53,7 +53,7 @@ async function onTickExport() {
 
   console.log(sumBenefits)
 
-  if (sumBenefits.empty) {
+  if (sumBenefits.length > 0) {
     const total = sumBenefits.reduce((a, b) => {
      return {benefit: a.benefit + b.benefit}
     });
