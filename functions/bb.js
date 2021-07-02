@@ -8,7 +8,7 @@ const period = 20;
 const sigma = 2;
 const feeRate = 0.0012;
 
-const leastAmount = process.env.leastAmount ? parseInt(process.env.leastAmount) : 0.0001;
+const leastAmount = process.env.leastAmount ? parseFloat(process.env.leastAmount) : 0.0001;
 const symbol = process.env.symbol ? process.env.symbol : 'BTC/JPY';
 const exchangeId = process.env.exchangeId ? process.env.exchangeId : 'bitbank';
 

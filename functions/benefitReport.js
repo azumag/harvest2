@@ -14,6 +14,7 @@ const currencyPairs = [
   'XLM/JPY',
   'QTUM/JPY',
   'BAT/JPY',
+  'OMG/JPY',
   'XRP/BTC',
   'ETH/BTC',
   'LTC/BTC',
