@@ -4,6 +4,11 @@ const { firebaseConfig } = require("firebase-functions");
 const { IncomingWebhook } = require('@slack/webhook');
 const dayjs = require("dayjs");
 
+const exchanges = [
+  'bitbank',
+  'bitflyer'
+]
+
 const currencyPairs = [
   'BTC/JPY',
   'XRP/JPY',
@@ -39,43 +44,47 @@ onTickExport();
 async function onTickExport() {
   functions.logger.info("invoked", {});
 
-  const today = dayjs().startOf('day');
-  const benefits = (await Promise.all(currencyPairs.map(e => getBenefits(today, e))))
-    .filter(Boolean);
+  const since = dayjs().subtract(1, 'week');
 
-  console.log(benefits);
+  exchanges.forEach(async (exchange) => {
+    const benefits = (await Promise.all(currencyPairs.map(e => getBenefits(exchange, since, e))))
+      .filter(Boolean);
 
-  const sumBenefits = benefits.map(bf => {
-    return { 
-      symbol: bf.symbol,
-      benefit: bf.benefits.reduce((a,b) => a+b)
+    console.log(benefits);
+
+    const sumBenefits = benefits.map(bf => {
+      return { 
+        symbol: bf.symbol,
+        benefit: bf.benefits.reduce((a,b) => a+b)
+      }
+    })
+
+    // console.log(sumBenefits)
+
+    if (sumBenefits.length > 0) {
+      const total = sumBenefits.reduce((a, b) => {
+       return {benefit: a.benefit + b.benefit}
+      });
+
+      console.log({exchange, sumBenefits, total});
+
+      await webhookSend(exchange, sumBenefits, total);
+
     }
-  })
-
-  console.log(sumBenefits)
-
-  if (sumBenefits.length > 0) {
-    const total = sumBenefits.reduce((a, b) => {
-     return {benefit: a.benefit + b.benefit}
-    });
-
-    console.log({sumBenefits, total});
-
-    await webhookSend(sumBenefits, total);
-  }
+  });
 
   functions.logger.info("fin", {});
 }
 
-async function getBenefits(today, symbol) {
+async function getBenefits(exchange, since, symbol) {
   const query = await admin
     .firestore()
     .collection('exchanges')
-    .doc('bitbank')
+    .doc(exchange)
     .collection('symbols')
     .doc(symbol.replace('/','_'))
     .collection('results')
-    .where('timestamp', '>=', today.toDate())
+    .where('timestamp', '>=', since.toDate())
     .get()
     // .add({
     //   buyAmount: parseFloat(leastAmount),
@@ -89,7 +98,7 @@ async function getBenefits(today, symbol) {
   return {symbol, benefits: (query.docs.map(e=>e.data().benefit))};
 }
 
-async function webhookSend(sumBenefits, total) {
+async function webhookSend(exchange, sumBenefits, total) {
   let attachments = sumBenefits.map((sb) => {
     return {
       color: 'good',
@@ -105,7 +114,7 @@ async function webhookSend(sumBenefits, total) {
   return webhook.send({
     username: 'Harvest 2: Results',
     icon_emoji: ':moneybag:',
-    text: total.benefit + ' JPY', 
+    text: exchange + ' : ' + total.benefit + ' JPY', 
     attachments
   });
 }

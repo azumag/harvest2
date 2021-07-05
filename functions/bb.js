@@ -264,6 +264,7 @@ async function webhookBenefitSend(status) {
   return webhook.send({
     username: 'Harvest 2: BB',
     icon_emoji: ':moneybag:',
+    text: 'Benefit: ' + status.benefit,
     attachments:[
       {
         color: 'danger',
