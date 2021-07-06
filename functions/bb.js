@@ -40,6 +40,7 @@ if (process.env.apikey) {
   }
 }
 
+/// ======= Main ==========
 async function onTickExport() {
   functions.logger.info("invoked", {symbol});
   const tickerHistories = await getTickers(period);
@@ -80,8 +81,9 @@ async function BBSignalOrder(tickerHistories, currentTicker) {
   if (bbResultBeforeTop < bbResultHistories.last) {
     if (bbResultCurrentTop > bbResultCurrent.last) {
       // sell
-      await exchange.createOrder(symbol, 'market', 'sell', leastAmount, price);
-      await webhookCommandSend({...status, trade: 'sell', amount: leastAmount});
+      const amount = await calcSellAmount();
+      await exchange.createOrder(symbol, 'market', 'sell', amount, price);
+      await webhookCommandSend({...status, trade: 'sell', amount});
       await recordSellBenefit(bbResultCurrent.last);
     }
   }
@@ -96,6 +98,41 @@ async function BBSignalOrder(tickerHistories, currentTicker) {
       webhookCommandSend({...status, trade: 'buy', amount});
     }
   }
+}
+
+async function calcSellAmount() {
+  const buyTrade = await getBuyTrade();
+  switch (exchangeId) {
+    case 'bitbank':
+      return buyTrade.amount;
+      break;
+    case 'bitflyer':
+      return buyTrade.amount - (buyTrade.amount * bitfFee);
+      break;
+    default:
+      return undefined
+      break;
+  }
+}
+
+async function getBuyTrade() {
+  const query = await admin
+    .firestore()
+    .collection('exchanges')
+    .doc(exchangeId)
+    .collection('symbols')
+    .doc(symbol.replace('/','_'))
+    .collection('buyTrades')
+    .orderBy('timestamp', 'desc')
+    .limit(1)
+    .get();
+
+  if (query.empty || query.docs === undefined) {
+    return undefined;
+  }
+
+  console.log(query);
+  return query.docs[0].data();
 }
 
 function BB(tickers) {
@@ -121,25 +158,7 @@ function BB(tickers) {
 }
 
 async function recordSellBenefit(last) {
-  const query = await admin
-    .firestore()
-    .collection('exchanges')
-    .doc(exchangeId)
-    .collection('symbols')
-    .doc(symbol.replace('/','_'))
-    .collection('buyTrades')
-    .orderBy('timestamp', 'desc')
-    .limit(1)
-    .get();
-
-  if (query.empty || query.docs === undefined) {
-    return undefined;
-  }
-
-  console.log(query);
-
-  const buyTrade = query.docs[0].data();
-
+  const buyTrade = await getBuyTrade()
   const buycost  = buyTrade.amount * buyTrade.last;
   const sellcost = leastAmount * last;
   const benefit = sellcost - (buycost + (buycost * feeRate)) - (sellcost * feeRate);
