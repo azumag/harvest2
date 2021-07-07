@@ -4,12 +4,18 @@ const ccxt = require('ccxt');
 const { firebaseConfig } = require("firebase-functions");
 const { IncomingWebhook } = require('@slack/webhook');
 
-const period = 20;
-const sigma = 2;
+function floorDecimal(value, n) {
+  const pow = Math.pow(10, n);
+  return Math.floor(value * pow) / pow;
+}
+
 const feeRate = 0.0012;
 
-const limitJPY = process.env.limitJPY ? parseInt(process.env.limitJPY) : 500;
-const leastAmount = process.env.leastAmount ? parseFloat(process.env.leastAmount) : 0.0001;
+let limitJPY = process.env.limitJPY ? parseInt(process.env.limitJPY) : 500;
+let leastAmount = process.env.leastAmount ? parseFloat(process.env.leastAmount) : 0.0001;
+let sigma = 2;
+let period = 20;
+
 const symbol = process.env.symbol ? process.env.symbol : 'BTC/JPY';
 const exchangeId = process.env.exchangeId ? process.env.exchangeId : 'bitbank';
 
@@ -59,6 +65,7 @@ async function callMain() {
 /// ======= Main ==========
 async function onTickExport() {
   functions.logger.info("invoked", {symbol});
+  const params = await setParameters();
   const tickerHistories = await getTickers(period);
   const currentTicker = await recordTicker();
   if (tickerHistories === undefined) {
@@ -67,8 +74,37 @@ async function onTickExport() {
     console.log(tickerHistories);
     await BBSignalOrder(tickerHistories, currentTicker);
   }
-  console.log({symbol, leastAmount, limitJPY, period, sigma});
+  console.log({symbol, params});
   functions.logger.info("fin", {exchangeId});
+}
+
+async function setParameters() {
+  const params = await getParameters();
+  if (params !== undefined) {
+    limitJPY = params.limitJPY ? params.limitJPY : 100;
+    leastAmount = params.leastAmount ? params.leastAmount : 0.0001;
+    period = params.period ? params.period : 20;
+    sigma = params.sigma ? params.sigma : 2;
+  }
+  return params;
+}
+
+async function getParameterRef() {
+  return await admin
+    .firestore()
+    .collection('exchanges')
+    .doc(exchangeId)
+    .collection('symbols')
+    .doc(symbol.replace('/','_'));
+}
+
+async function getParameters() {
+  const doc = await (await getParameterRef()).get();
+  if (doc.exists) {
+    return doc.data();
+  } else {
+    return undefined;
+  }
 }
 
 async function BBSignalOrder(tickerHistories, currentTicker) {
@@ -118,16 +154,16 @@ async function BBSignalOrder(tickerHistories, currentTicker) {
 function calcBuyAmont(price) {
   if (limitJPY === undefined) {
     const bitfFee = (leastAmount * 0.0015);
-    return (exchangeId === 'bitflyer') ? leastAmount + (bitfFee * 2) : leastAmount;
+    return floorDecimal((exchangeId === 'bitflyer') ? leastAmount + (bitfFee * 2) : leastAmount, 6);
   }
-  const amount = limitJPY / price;
+  const amount = Math.max((limitJPY / price), leastAmount);
   switch (exchangeId) {
     case 'bitbank':
       return amount;
       break;
     case 'bitflyer':
       const bitfFee = (amount * 0.0015);
-      return amount + (bitfFee * 2);
+      return floorDecimal(amount + (bitfFee * 2), 6);
       break;
     default:
       return undefined;
@@ -143,7 +179,8 @@ async function calcSellAmount() {
     case 'bitbank':
       return buyTrade.amount;
     case 'bitflyer':
-      return buyTrade.amount - (buyTrade.amount * bitfFee);
+      const bitfFee = (buyTrade.amount * 0.0015);
+      return floorDecimal(buyTrade.amount - bitfFee, 6);
     default:
       return undefined
   }
@@ -191,6 +228,18 @@ function BB(tickers) {
   return {last: lasts[0], average, standardDeviation};
 }
 
+async function adjustParameters(benefit) {
+  const paramRef = await getParameterRef();
+  const _period = (benefit > 0) ? period - 1 : period + 1;
+  // const _sigma  = (benefit > 0) ? sigma - 0.01 : sigma + 0.01;
+  await paramRef.update({
+    limitJPY: limitJPY + benefit,
+    period: (_period <= 2) ? 2 : _period,
+    // sigma: _sigma,
+    leastAmount
+  });
+}
+
 async function recordSellBenefit(last, amount) {
   const buyTrade = await getBuyTrade()
   if (buyTrade === undefined) {
@@ -213,9 +262,12 @@ async function recordSellBenefit(last, amount) {
       buyPrice: buyTrade.last,
       sellPrice: last,
       benefit,
+      limitJPY,
       timestamp: new Date()
     });
   console.log(result);
+
+  await adjustParameters(benefit);
 
   await webhookBenefitSend({
     benefit,

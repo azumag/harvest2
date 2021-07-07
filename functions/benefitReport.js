@@ -44,7 +44,8 @@ onTickExport();
 async function onTickExport() {
   functions.logger.info("invoked", {});
 
-  const since = dayjs().subtract(1, 'week');
+  // const since = dayjs().subtract(1, 'week');
+  const since = dayjs().subtract(1, 'day');
 
   exchanges.forEach(async (exchange) => {
     const benefits = (await Promise.all(currencyPairs.map(e => getBenefits(exchange, since, e))))
