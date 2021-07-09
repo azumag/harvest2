@@ -34,6 +34,9 @@ const currencyPairs = [
 const url = functions.config().slack ? functions.config().slack : process.env.slack;
 const webhook = url ? new IncomingWebhook(url) : null;
 
+
+const interval = process.env.interval ? process.env.interval : 'day'
+
 admin.initializeApp({
   credential: admin.credential.applicationDefault(),
   databaseURL: firebaseConfig.databaseURL
@@ -45,7 +48,7 @@ async function onTickExport() {
   functions.logger.info("invoked", {});
 
   // const since = dayjs().subtract(1, 'week');
-  const since = dayjs().subtract(1, 'day');
+  const since = dayjs().subtract(1, interval);
 
   exchanges.forEach(async (exchange) => {
     const benefits = (await Promise.all(currencyPairs.map(e => getBenefits(exchange, since, e))))
@@ -113,7 +116,7 @@ async function webhookSend(exchange, sumBenefits, total) {
   });
 
   return webhook.send({
-    username: 'Harvest 2: Results',
+    username: 'Harvest 2: ' + interval + 'Results',
     icon_emoji: ':moneybag:',
     text: exchange + ' : ' + total.benefit + ' JPY', 
     attachments

@@ -231,10 +231,11 @@ function BB(tickers) {
 async function adjustParameters(benefit) {
   const paramRef = await getParameterRef();
   const _period = (benefit > 0) ? period - 1 : period + 1;
+  // const _period = (benefit < 0) ? period - 1 : period + 1;
   // const _sigma  = (benefit > 0) ? sigma - 0.01 : sigma + 0.01;
   await paramRef.update({
-    limitJPY: limitJPY + benefit,
-    period: (_period <= 2) ? 2 : _period,
+    limitJPY: limitJPY + (benefit * 10),
+    period: (_period <= 5) ? 5 : _period,
     // sigma: _sigma,
     leastAmount
   });
