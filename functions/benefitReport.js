@@ -116,6 +116,7 @@ async function webhookSend(exchange, sumBenefits, total) {
   });
 
   return webhook.send({
+    channel: 'results_' + interval,
     username: 'Harvest 2: ' + interval + 'Results',
     icon_emoji: ':moneybag:',
     text: exchange + ' : ' + total.benefit + ' JPY', 
