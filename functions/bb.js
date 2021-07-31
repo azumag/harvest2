@@ -144,9 +144,13 @@ async function BBSignalOrder(tickerHistories, currentTicker) {
     if (bbResultCurrentBottom < bbResultCurrent.last) {
       // buy
       const amount = calcBuyAmont(bbResultCurrent.last);
-      await exchange.createOrder(symbol, 'market', 'buy', amount, price);
-      await recordBuyOrder(bbResultCurrent.last, amount);
-      webhookCommandSend({...status, trade: 'buy', amount});
+      const buyTrade = await getBuyTrade();
+      if (buyTrade === undefined) {
+        // limit buy trade for one
+        await exchange.createOrder(symbol, 'market', 'buy', amount, price);
+        await recordBuyOrder(bbResultCurrent.last, amount);
+        webhookCommandSend({...status, trade: 'buy', amount});
+      }
     }
   }
 }
@@ -230,8 +234,8 @@ function BB(tickers) {
 
 async function adjustParameters(benefit) {
   const paramRef = await getParameterRef();
-  const _period = (benefit > 0) ? period - 1 : period + 1;
-  // const _period = (benefit < 0) ? period - 1 : period + 1;
+  // const _period = (benefit > 0) ? period - 1 : period + 1;
+  const _period = (benefit < 0) ? period - 1 : period + 1;
   // const _sigma  = (benefit > 0) ? sigma - 0.01 : sigma + 0.01;
   await paramRef.update({
     limitJPY: limitJPY + (benefit * 10),
