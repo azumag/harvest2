@@ -46,6 +46,7 @@ async function callMain() {
     webhook.send({
       username: 'Harvest 2: BB',
       icon_emoji: ':moneybag:',
+      channel: 'error',
       text: 'ERROR: ' + exchangeId + ' : ' + symbol + ' : ' + e,
       attachments: [
         {
@@ -183,8 +184,9 @@ async function calcSellAmount() {
     case 'bitbank':
       return buyTrade.amount;
     case 'bitflyer':
-      const bitfFee = (buyTrade.amount * 0.0015);
-      return floorDecimal(buyTrade.amount - bitfFee, 6);
+      // const bitfFee = (buyTrade.amount * 0.0015);
+      // return floorDecimal(buyTrade.amount - bitfFee, 6);
+      return floorDecimal(buyTrade.amount / 1.0015, 6);
     default:
       return undefined
   }
@@ -238,7 +240,7 @@ async function adjustParameters(benefit) {
   const _period = (benefit < 0) ? period - 1 : period + 1;
   // const _sigma  = (benefit > 0) ? sigma - 0.01 : sigma + 0.01;
   await paramRef.update({
-    limitJPY: limitJPY + (benefit * 10),
+    limitJPY: limitJPY + (benefit * 1),
     period: (_period <= 6) ? 6 : _period,
     // sigma: _sigma,
     leastAmount

@@ -74,7 +74,7 @@ async function onTickExport() {
   functions.logger.info("invoked", {});
   await Promise.all([
     setUnits(),
-    getAllOrderBooks()
+    // getAllOrderBooks()
   ])
   await innerArbitrage();
   functions.logger.info("fin", {});
@@ -120,14 +120,15 @@ async function getAllOrderBooks() {
   functions.logger.info("fin: getAllOrderBooks", {});
 }
 
-// async function getOrderBook(symbol) {
-function getOrderBook(symbol) {
+async function getOrderBook(symbol) {
+// function getOrderBook(symbol) {
   // const orderBook = allOrderBooks[symbol] ? allOrderBooks[symbol] 
-  //   : await bitbank.fetchOrderBook(symbol, 1, {limit: 1});
+    // : await bitbank.fetchOrderBook(symbol, 1, {limit: 1});
+  const orderBook = await bitbank.fetchOrderBook(symbol, 1, {limit: 1});
 
   // allOrderBooks[symbol] = orderBook; // For performance
 
-  const orderBook = allOrderBooks[symbol];
+  // const orderBook = allOrderBooks[symbol];
 
   // CHECK: why ask/bid inversed?
   return { 
@@ -192,8 +193,8 @@ function getSymbolWithDirection(rootCurrency, targCurrency) {
 
 async function estimateAndOrder(routes, orderBooks) {
   const symbolWithDirection = getSymbolWithDirection(routes.rootCurrency, routes.targCurrency);
-  // const orderBook = await getOrderBook(symbolWithDirection.symbol);
-  const orderBook = getOrderBook(symbolWithDirection.symbol);
+  const orderBook = await getOrderBook(symbolWithDirection.symbol);
+  // const orderBook = getOrderBook(symbolWithDirection.symbol);
 
   orderBooks.push({
     ...symbolWithDirection,
