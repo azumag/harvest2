@@ -3,6 +3,7 @@ const admin = require("firebase-admin");
 const ccxt = require('ccxt');
 const { firebaseConfig } = require("firebase-functions");
 const { IncomingWebhook } = require('@slack/webhook');
+const { debug } = require("firebase-functions/lib/logger");
 
 function floorDecimal(value, n) {
   const pow = Math.pow(10, n);
@@ -15,6 +16,8 @@ let limitJPY = process.env.limitJPY ? parseInt(process.env.limitJPY) : 500;
 let leastAmount = process.env.leastAmount ? parseFloat(process.env.leastAmount) : 0.0001;
 let sigma = 2;
 let period = 20;
+
+let debugAmount = 0;
 
 const symbol = process.env.symbol ? process.env.symbol : 'BTC/JPY';
 const exchangeId = process.env.exchangeId ? process.env.exchangeId : 'bitbank';
@@ -55,6 +58,10 @@ async function callMain() {
             {
               title: 'stacktrace',
               value: e.stack
+            },
+            {
+              title: 'debugAmount',
+              value: debugAmount
             }
           ] 
         }
@@ -69,6 +76,7 @@ async function onTickExport() {
   const params = await setParameters();
   const tickerHistories = await getTickers(period);
   const currentTicker = await recordTicker();
+  // await recordTickerArray();
   if (tickerHistories === undefined) {
 
   } else {
@@ -135,9 +143,12 @@ async function BBSignalOrder(tickerHistories, currentTicker) {
     if (bbResultCurrentTop > bbResultCurrent.last) {
       // sell
       const amount = await calcSellAmount();
-      await exchange.createOrder(symbol, 'market', 'sell', amount, price);
-      await webhookCommandSend({...status, trade: 'sell', amount});
-      await recordSellBenefit(bbResultCurrent.last, amount);
+      if (amount !== undefined) {
+        debugAmount = amount;
+        await exchange.createOrder(symbol, 'market', 'sell', amount, price);
+        await webhookCommandSend({...status, trade: 'sell', amount});
+        await recordSellBenefit(bbResultCurrent.last, amount);
+      }
     }
   }
 
@@ -178,7 +189,13 @@ function calcBuyAmont(price) {
 async function calcSellAmount() {
   const buyTrade = await getBuyTrade();
   if (buyTrade === undefined) {
-    return leastAmount;
+    const balance = await exchange.fetchBalance();
+    const targCurrency = symbol.match(/(.+)\//)[1];
+    if (balance.total[targCurrency] > leastAmount) {
+      return leastAmount;
+    } else {
+      return undefined;
+    }
   }
   switch (exchangeId) {
     case 'bitbank':
@@ -186,7 +203,7 @@ async function calcSellAmount() {
     case 'bitflyer':
       // const bitfFee = (buyTrade.amount * 0.0015);
       // return floorDecimal(buyTrade.amount - bitfFee, 6);
-      return floorDecimal(buyTrade.amount / 1.0015, 6);
+      return floorDecimal(buyTrade.amount / 1.0015, 3);
     default:
       return undefined
   }
@@ -241,7 +258,8 @@ async function adjustParameters(benefit) {
   // const _sigma  = (benefit > 0) ? sigma - 0.01 : sigma + 0.01;
   await paramRef.update({
     limitJPY: limitJPY + (benefit * 1),
-    period: (_period <= 6) ? 6 : _period,
+    // period: (_period <= 6) ? 6 : _period,
+    period: (_period <= 9) ? 9 : _period,
     // sigma: _sigma,
     leastAmount
   });
@@ -331,6 +349,26 @@ async function recordBuyOrder(last, amount) {
     });
 
     console.log(result);
+}
+
+async function recordTickerArray() {
+  const ticker = await exchange.fetchTicker(symbol);
+  console.log(ticker);
+  const result = await admin
+    .firestore()
+    .collection('exchanges')
+    .doc(exchangeId)
+    .collection('symbols')
+    .doc(symbol.replace('/','_'))
+    .collection('tickerLastArrays')
+    .set({
+        lasts: admin.firestore.FieldValue.arrayUnion(ticker.last),
+        timestamp: new Date(ticker.timestamp)
+      },
+      {merge: true}
+    );
+    console.log(result);
+  return ticker;
 }
 
 async function recordTicker() {
