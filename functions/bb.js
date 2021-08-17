@@ -178,7 +178,7 @@ function calcBuyAmont(price) {
       return amount;
       break;
     case 'bitflyer':
-      const bitfFee = (amount * 0.0015);
+      const bitfFee = (amount * 0.002);
       return floorDecimal(amount + (bitfFee * 2), 6);
       break;
     default:
@@ -203,7 +203,7 @@ async function calcSellAmount() {
     case 'bitflyer':
       // const bitfFee = (buyTrade.amount * 0.0015);
       // return floorDecimal(buyTrade.amount - bitfFee, 6);
-      return floorDecimal(buyTrade.amount / 1.0015, 3);
+      return floorDecimal(buyTrade.amount / 1.002, 6);
     default:
       return undefined
   }
@@ -259,7 +259,7 @@ async function adjustParameters(benefit) {
   await paramRef.update({
     limitJPY: limitJPY + (benefit * 1),
     // period: (_period <= 6) ? 6 : _period,
-    period: (_period <= 9) ? 9 : _period,
+    period: (_period <= 1) ? 1 : _period,
     // sigma: _sigma,
     leastAmount
   });
