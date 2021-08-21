@@ -203,7 +203,7 @@ async function calcSellAmount() {
     case 'bitflyer':
       // const bitfFee = (buyTrade.amount * 0.0015);
       // return floorDecimal(buyTrade.amount - bitfFee, 6);
-      return floorDecimal(buyTrade.amount / 1.002, 6);
+      return floorDecimal(buyTrade.amount / 1.003, 6);
     default:
       return undefined
   }
