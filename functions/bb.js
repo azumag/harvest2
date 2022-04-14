@@ -266,8 +266,8 @@ async function adjustParameters(benefit) {
   // const _sigma  = (benefit > 0) ? sigma - 0.01 : sigma + 0.01;
   await paramRef.update({
     limitJPY: limitJPY + (benefit * 1),
-    // period: (_period <= 6) ? 6 : _period,
-    period: (_period <= 1) ? 1 : _period,
+    period: (_period <= 10) ? 10 : _period,
+    // period: (_period <= 1) ? 1 : _period,
     // sigma: _sigma,
     leastAmount
   });
