@@ -18,6 +18,7 @@ let sigma = 2;
 let period = 20;
 
 let debugAmount = 0;
+let debugState = 'neutral';
 
 const symbol = process.env.symbol ? process.env.symbol : 'BTC/JPY';
 const exchangeId = process.env.exchangeId ? process.env.exchangeId : 'bitbank';
@@ -60,8 +61,12 @@ async function callMain() {
               value: e.stack
             },
             {
-              title: 'debugAmount',
+              title: 'Amount',
               value: debugAmount
+            },
+            {
+              title: 'State',
+              value: debugState
             }
           ] 
         }
@@ -145,6 +150,7 @@ async function BBSignalOrder(tickerHistories, currentTicker) {
       const amount = await calcSellAmount();
       if (amount !== undefined) {
         debugAmount = amount;
+        debugState = 'Sell';
         await exchange.createOrder(symbol, 'market', 'sell', amount, price);
         await webhookCommandSend({...status, trade: 'sell', amount});
         await recordSellBenefit(bbResultCurrent.last, amount);
@@ -159,6 +165,8 @@ async function BBSignalOrder(tickerHistories, currentTicker) {
       const buyTrade = await getBuyTrade();
       if (buyTrade === undefined) {
         // limit buy trade for one
+        debugAmount = amount;
+        debugState = 'Buy';
         await exchange.createOrder(symbol, 'market', 'buy', amount, price);
         await recordBuyOrder(bbResultCurrent.last, amount);
         webhookCommandSend({...status, trade: 'buy', amount});
