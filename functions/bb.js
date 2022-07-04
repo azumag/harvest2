@@ -141,7 +141,7 @@ async function BBSignalOrder(tickerHistories, currentTicker) {
     beforeLast: bbResultHistories.last,
     currentLast: bbResultCurrent.last,
   };
-  console.log(status);
+  // console.log(status);
 
   const price = (exchangeId === 'bitflyer') ? 0 : bbResultCurrent.last
   if (bbResultBeforeTop < bbResultHistories.last) {
@@ -233,7 +233,7 @@ async function getBuyTrade() {
     return undefined;
   }
 
-  console.log(query);
+  // console.log(query);
   return query.docs[0].data();
 }
 
@@ -298,7 +298,7 @@ async function recordSellBenefit(last, amount) {
       limitJPY,
       timestamp: new Date()
     });
-  console.log(result);
+  // console.log(result);
 
   await adjustParameters(benefit);
 
@@ -325,7 +325,7 @@ async function recordSellBenefit(last, amount) {
 
   const delid = deleteQuery.docs[0].id;
 
-  console.log({delid});
+  // console.log({delid});
 
   if (delid) {
     const doDeleteQuery = await admin
@@ -337,7 +337,7 @@ async function recordSellBenefit(last, amount) {
       .collection('buyTrades')
       .doc(delid)
       .delete();
-    console.log(doDeleteQuery);
+    // console.log(doDeleteQuery);
   }
 
 }
@@ -356,12 +356,12 @@ async function recordBuyOrder(last, amount) {
       timestamp: new Date()
     });
 
-    console.log(result);
+    // console.log(result);
 }
 
 async function recordTickerArray() {
   const ticker = await exchange.fetchTicker(symbol);
-  console.log(ticker);
+  // console.log(ticker);
   const result = await admin
     .firestore()
     .collection('exchanges')
@@ -375,13 +375,13 @@ async function recordTickerArray() {
       },
       {merge: true}
     );
-    console.log(result);
+    // console.log(result);
   return ticker;
 }
 
 async function recordTicker() {
   const ticker = await exchange.fetchTicker(symbol);
-  console.log(ticker);
+  // console.log(ticker);
   const result = await admin
     .firestore()
     .collection('exchanges')
@@ -398,7 +398,7 @@ async function recordTicker() {
       timestamp: new Date(ticker.timestamp)
     });
 
-    console.log(result);
+    // console.log(result);
   return ticker;
 }
   
