@@ -85,10 +85,10 @@ async function onTickExport() {
   if (tickerHistories === undefined) {
 
   } else {
-    console.log(tickerHistories);
+    // console.log(tickerHistories);
     await BBSignalOrder(tickerHistories, currentTicker);
   }
-  console.log({symbol, params});
+  // console.log({symbol, params});
   functions.logger.info("fin", {exchangeId});
 }
 
